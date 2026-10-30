@@ -1,0 +1,81 @@
+# The Tax Calculator delivery pipeline.
+#
+# Steps: clone-source -> npminstall -> tests -> build -> deploy
+#
+apiVersion: tekton.dev/v1
+kind: Pipeline
+metadata:
+  name: tax-calculator-pipeline
+  labels:
+    app.kubernetes.io/part-of: tax-calculator
+spec:
+  description: Build, test, publish and deploy the Tax Calculator
+  params:
+    - name: repo-url
+      description: Repository the clone task fetches
+      type: string
+      default: https://github.com/SyukurGit/tax-calculator.git
+    - name: revision
+      description: Branch, tag or commit to deploy
+      type: string
+      default: main
+    - name: image-url
+      description: Registry reference the build task pushes to
+      type: string
+      default: us.icr.io/tax-calculator-ns/tax-calculator:latest
+  workspaces:
+    - name: source
+  tasks:
+    - name: clone-source
+      taskRef:
+        name: clone-source
+      workspaces:
+        - name: source
+          workspace: source
+      params:
+        - name: url
+          value: $(params.repo-url)
+        - name: revision
+          value: $(params.revision)
+
+    # --- npm install ---
+    - name: npminstall
+      taskRef:
+        name: npminstall
+      runAfter: [clone-source]
+      workspaces:
+        - name: source
+          workspace: source
+
+    # --- Jasmine tests ---
+    - name: tests
+      taskRef:
+        name: tests
+      runAfter: [npminstall]
+      workspaces:
+        - name: source
+          workspace: source
+
+    # --- build the image ---
+    - name: build
+      taskRef:
+        name: build
+      runAfter: [tests]
+      workspaces:
+        - name: source
+          workspace: source
+      params:
+        - name: image-url
+          value: $(params.image-url)
+
+    # --- deploy ---
+    - name: deploy
+      taskRef:
+        name: deploy
+      runAfter: [build]
+      workspaces:
+        - name: source
+          workspace: source
+      params:
+        - name: image-url
+          value: $(params.image-url)
